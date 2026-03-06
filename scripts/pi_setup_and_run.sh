@@ -77,9 +77,17 @@ ethtool -K "$INTERFACE" gro off || echo "⚠️  GRO offload not supported on th
 echo "🔍 Verifying Elite Models..."
 if [ ! -f "app/ml_models/nids_hybrid_elite.pth" ]; then
     echo "⚠️ Elite Hybrid model missing! Running bootstrap script..."
-    python3 scripts/bootstrap_ml.py || echo "⚠️ Bootstrap failed. Models must be manualy placed."
+    # Use venv python for bootstrap
+    ./venv/bin/python3 scripts/bootstrap_ml.py || echo "⚠️ Bootstrap failed. Models must be manually placed."
 fi
 
 # 9. Launch
 echo "⚡ LAUNCHING GHOST OPERATORS NIDS APPLIANCE..."
-python3 -m app.main
+
+# FIX: Help NumPy/OpenBLAS avoid 'Illegal instruction' on some Pi kernels/CPU versions
+export OPENBLAS_CORETYPE=ARMV8
+
+# FIX: Run with sudo but use the VENV's python specifically to avoid 'ModuleNotFoundError'
+# This ensures it has root permissions for net-capture but uses the venv's installed modules.
+echo "🛡️  Running as ROOT using Venv Context..."
+sudo ./venv/bin/python3 -m app.main

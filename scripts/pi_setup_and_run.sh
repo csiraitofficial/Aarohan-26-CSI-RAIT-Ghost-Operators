@@ -84,10 +84,16 @@ fi
 # 9. Launch
 echo "⚡ LAUNCHING GHOST OPERATORS NIDS APPLIANCE..."
 
-# FIX: Help NumPy/OpenBLAS avoid 'Illegal instruction' on some Pi kernels/CPU versions
-export OPENBLAS_CORETYPE=ARMV8
+# FIX: Use 'generic' to be safe across ALL Raspberry Pi models (3, 4, 5, Zero 2)
+export OPENBLAS_CORETYPE=generic
 
-# FIX: Run with sudo but use the VENV's python specifically to avoid 'ModuleNotFoundError'
-# This ensures it has root permissions for net-capture but uses the venv's installed modules.
+# DEBUG: Test if the core libraries can load without crashing
+echo "🔍 Checking hardware compatibility..."
+./venv/bin/python3 -c "import numpy; import pandas; import torch; print('✅ Hardware Math Libraries: OK')" || {
+    echo "❌ Hardware Error: One of your math libraries (NumPy/Torch) is incompatible with this Pi's CPU."
+    echo "💡 Try running: pip install --upgrade --force-reinstall numpy==1.21.0"
+}
+
+# FIX: Run with sudo but use the VENV's python specifically
 echo "🛡️  Running as ROOT using Venv Context..."
-sudo ./venv/bin/python3 -m app.main
+sudo env "OPENBLAS_CORETYPE=generic" ./venv/bin/python3 -m app.main

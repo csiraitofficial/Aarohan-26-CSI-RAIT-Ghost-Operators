@@ -141,6 +141,11 @@ class IPSEngine:
             logger.error(f"IPS OS Unblock failed for {ip}: {e}")
         return False
 
+    def is_blocked(self, ip: str) -> bool:
+        """Check if an IP is currently blocked."""
+        with self._lock:
+            return ip in self.active_blocks
+
     def cleanup_expired(self):
         """Called periodically by orchestrator to lift expired bans."""
         now = datetime.now()

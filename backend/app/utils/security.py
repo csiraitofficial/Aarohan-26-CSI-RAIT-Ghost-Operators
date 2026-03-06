@@ -111,7 +111,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(b
     return payload
 
 
-async def require_role(*roles: str):
+def require_role(*roles: str):
     """Factory for role-based access control."""
     async def _dependency(user=Depends(get_current_user)):
         if user.get("role") not in roles:

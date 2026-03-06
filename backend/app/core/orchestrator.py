@@ -27,7 +27,7 @@ from app.intelligence.threat_feeds import threat_intel
 from app.intelligence.geoip import geoip_lookup
 from app.models.schemas import (
     PacketInfo, SnifferConfig, MLModelConfig, IPSConfig,
-    SystemStatus, DetectionType,
+    SystemStatus, DetectionType, Alert,
 )
 
 logger = logging.getLogger(__name__)

@@ -7,7 +7,7 @@ using MITRE ATT&CK mapping and temporal relationship analysis.
 
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 from collections import defaultdict
 
 from app.models.schemas import Alert, Incident, AttackCategory

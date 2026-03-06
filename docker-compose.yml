@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: nids_mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - nids_network
+
+  redis:
+    image: redis:alpine
+    container_name: nids_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - nids_network
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg14
+    container_name: nids_timescaledb
+    environment:
+      - POSTGRES_PASSWORD=password
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    networks:
+      - nids_network
+
+networks:
+  nids_network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  timescaledb_data:

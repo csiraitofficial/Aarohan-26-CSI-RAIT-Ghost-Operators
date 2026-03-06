@@ -18,9 +18,9 @@ from app.models.schemas import (
     SnifferConfig, MLModelConfig, Alert, PacketInfo,
     SystemStatus, StartSnifferRequest, StopSnifferRequest,
     AlertResponse, PacketResponse, StatsResponse, BlockIPRequest,
-    AlertSeverity, DetectionType, HealthResponse
+    AlertSeverity, DetectionType, HealthResponse, UserRole
 )
-from app.utils.security import verify_api_key, require_role, UserRole
+from app.utils.security import verify_api_key, require_role
 from app.utils.config import settings
 
 # Orchestrator will be initialized in main.py and stored here

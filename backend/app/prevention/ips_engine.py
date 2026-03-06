@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Advanced IPS Engine — Real-time Prevention & Mitigation.
 """
@@ -9,7 +10,7 @@ import threading
 from typing import Dict, Set, Optional, List, Any
 from datetime import datetime, timedelta
 
-from app.models.schemas import IPSAction, IPSConfig
+from app.models.schemas import IPSAction, IPSConfig, PacketInfo
 
 logger = logging.getLogger(__name__)
 

@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     BLOCKCHAIN_ENABLED: bool = True
     BLOCKCHAIN_RPC_URL: str = "http://127.0.0.1:8545"
     BLOCKCHAIN_CONTRACT_ADDRESS: str = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+    BLOCKCHAIN_PRIVATE_KEY: Optional[str] = None
 
     # Hardware Resilience
     NIDS_SAFE_MODE: bool = False

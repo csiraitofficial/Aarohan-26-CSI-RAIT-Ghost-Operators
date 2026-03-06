@@ -65,16 +65,35 @@ class BlockchainReporter:
             return
 
         try:
-            account = self._w3.eth.accounts[0]
-            # Combine attack category and integrity hash for storage as per requirements
+            # Combine attack category and integrity hash for storage
             documented_data = f"{attack} | Hash: {integrity_hash}" if integrity_hash else attack
             
-            tx = self._contract.functions.storeAlert(
-                str(ip),
-                str(documented_data)
-            ).transact({"from": account})
+            # Prepare transaction
+            if settings.BLOCKCHAIN_PRIVATE_KEY:
+                account = self._w3.eth.account.from_key(settings.BLOCKCHAIN_PRIVATE_KEY)
+                nonce = self._w3.eth.get_transaction_count(account.address)
+                
+                # Build transaction
+                tx_data = self._contract.functions.storeAlert(
+                    str(ip),
+                    str(documented_data)
+                ).build_transaction({
+                    "from": account.address,
+                    "nonce": nonce,
+                    "gasPrice": self._w3.eth.gas_price
+                })
+                
+                # Sign and Send
+                signed_tx = self._w3.eth.account.sign_transaction(tx_data, settings.BLOCKCHAIN_PRIVATE_KEY)
+                tx = self._w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            else:
+                account = self._w3.eth.accounts[0]
+                tx = self._contract.functions.storeAlert(
+                    str(ip),
+                    str(documented_data)
+                ).transact({"from": account})
             
             tx_hash = self._w3.to_hex(tx)
-            logger.info(f"⛓️ Blockchain: Alert for {ip} documented at TX {tx_hash}")
+            logger.info(f"⛓️ Blockchain: Alert documented at TX {tx_hash}")
         except Exception as e:
             logger.warning(f"Failed to document alert on blockchain: {e}")

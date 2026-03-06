@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any, Callable
 from collections import deque
 import logging
+from app.blockchain.reporter import BlockchainReporter
 
 from app.models.schemas import (
     Alert, PacketInfo, AlertSeverity, DetectionType, AttackCategory,
@@ -35,6 +36,7 @@ class AlertManager:
         alert_callback: Optional[Callable] = None,
         ws_broadcast: Optional[Callable] = None,
     ):
+        self.blockchain = BlockchainReporter()
         self.max_alerts = max_alerts
         self.alert_callback = alert_callback
         self.ws_broadcast = ws_broadcast  # called with alert dict for real-time push
@@ -99,6 +101,10 @@ class AlertManager:
                 mitre_mapping=detection_info.get("mitre"),
             )
 
+            self.blockchain.report_alert(
+                alert.source_ip,
+                alert.attack_category
+            )
             # Store & Stats (Thread-safe)
             with self._lock:
                 # Suppression

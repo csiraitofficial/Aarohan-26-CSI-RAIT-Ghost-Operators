@@ -15,22 +15,22 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # 2. System Dependency Installation
-echo "📥 Installing System Dependencies (libpcap, mongodb, redis)..."
+echo "📥 Installing System Dependencies (libpcap, redis)..."
 apt update
-apt install -y python3-pip python3-venv libpcap-dev mongodb redis-server ethtool tshark
+apt install -y python3-pip python3-venv libpcap-dev redis-server ethtool tshark
 
 # 3. Service Management
-echo "⚙️ Ensuring services are active..."
-systemctl start mongodb || echo "⚠️ MongoDB start failed/not installed as service"
-systemctl start redis-server || echo "⚠️ Redis start failed/not installed as service"
-systemctl enable mongodb
-systemctl enable redis-server
+# echo "⚙️ Ensuring services are active..."
+# systemctl start mongodb || echo "⚠️ MongoDB start failed/not installed as service"
+# systemctl start redis-server || echo "⚠️ Redis start failed/not installed as service"
+# systemctl enable mongodb
+# systemctl enable redis-server
 
 # 4. Virtual Environment Setup
 echo "🐍 Setting up Python Virtual Environment..."
 cd "$(dirname "$0")/../backend"
 if [ ! -d "venv" ]; then
-    python3 -m venv venv
+    python3 -m venv venv    
 fi
 source venv/bin/activate
 

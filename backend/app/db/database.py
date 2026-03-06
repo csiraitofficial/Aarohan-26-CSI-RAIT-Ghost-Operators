@@ -49,10 +49,48 @@ class DatabaseManager:
             await self.db.alerts.create_index([("source_ip", 1)])
             await self.db.alerts.create_index([("is_resolved", 1)])
             
-            # Packets indexes (capped collection or TTL index recommended for performance)
-            await self.db.packets.create_index([("timestamp", -1)], expireAfterSeconds=86400 * 7) # 7 days TTL
+            # Packets indexes
+            await self.db.packets.create_index([("timestamp", -1)], expireAfterSeconds=86400 * 7)
             
-            logger.info("Database indexes created")
+            # Users indexes
+            await self.db.users.create_index("username", unique=True)
+            await self.db.users.create_index("email", unique=True)
+            
+            # Blocked IPs
+            await self.db.blocks.create_index("ip", unique=True)
+            
+            logger.info("Database indexes created (Alerts, Packets, Users, Blocks)")
+
+    # ---- Users ----
+    async def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
+        if self.db is None: return None
+        return await self.db.users.find_one({"username": username})
+
+    async def insert_user(self, user_data: Dict[str, Any]):
+        if self.db is not None:
+            await self.db.users.insert_one(user_data)
+
+    async def update_user(self, username: str, update_data: Dict[str, Any]):
+        if self.db is not None:
+            await self.db.users.update_one({"username": username}, {"$set": update_data})
+
+    # ---- Blocks ----
+    async def add_blocked_ip(self, ip: str, reason: str):
+        if self.db is not None:
+            await self.db.blocks.update_one(
+                {"ip": ip}, 
+                {"$set": {"ip": ip, "reason": reason, "timestamp": datetime.now()}},
+                upsert=True
+            )
+
+    async def is_ip_blocked(self, ip: str) -> bool:
+        if self.db is None: return False
+        return await self.db.blocks.find_one({"ip": ip}) is not None
+
+    async def get_all_blocks(self) -> List[str]:
+        if self.db is None: return []
+        cursor = self.db.blocks.find({}, {"ip": 1})
+        return [doc["ip"] async for doc in cursor]
 
     # ---- Alerts ----
     async def insert_alert(self, alert_data: Dict[str, Any]):

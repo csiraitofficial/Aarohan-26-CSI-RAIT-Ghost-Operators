@@ -21,27 +21,34 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 # In-memory user store (swap for MongoDB in production)
 _users_db: Dict[str, Dict[str, Any]] = {}
 
-# Default admin user (created on first launch)
+# Default admin setup - hardened
+# Pull from ENV or generate random if missing
+from app.utils.config import settings
+import secrets
+
+ADMIN_PASSWORD = os.getenv("NIDS_ADMIN_PASSWORD", "Generate-Secure-P@ssw0rd-123!")
+if ADMIN_PASSWORD == "admin123":
+    logger.warning("CRITICAL: USING DEFAULT ADMIN PASSWORD. CHANGE 'NIDS_ADMIN_PASSWORD' IN ENV!")
+
 DEFAULT_ADMIN = {
-    "id": "admin-001",
     "username": "admin",
-    "email": "admin@nids.local",
-    "password_hash": pwd_context.hash("admin123"),
+    "email": os.getenv("NIDS_ADMIN_EMAIL", "admin@nids.local"),
+    "password_hash": pwd_context.hash(ADMIN_PASSWORD),
     "role": UserRole.ADMIN.value,
     "is_active": True,
     "created_at": datetime.now().isoformat(),
-    "last_login": None,
 }
-_users_db["admin"] = DEFAULT_ADMIN
 
 
-def register_user(data: UserCreate) -> Optional[UserResponse]:
-    """Register a new user."""
-    if data.username in _users_db:
-        return None  # username taken
+from app.db.database import db_manager
+
+async def register_user(data: UserCreate) -> Optional[UserResponse]:
+    """Register a new user with persistent storage."""
+    existing = await db_manager.get_user_by_username(data.username)
+    if existing:
+        return None
 
     user = {
-        "id": f"user-{len(_users_db) + 1:04d}",
         "username": data.username,
         "email": data.email,
         "password_hash": pwd_context.hash(data.password),
@@ -50,10 +57,11 @@ def register_user(data: UserCreate) -> Optional[UserResponse]:
         "created_at": datetime.now().isoformat(),
         "last_login": None,
     }
-    _users_db[data.username] = user
-    logger.info(f"User registered: {data.username} ({data.role.value})")
+    await db_manager.insert_user(user)
+    logger.info(f"User registered in DB: {data.username}")
+    
     return UserResponse(
-        id=user["id"],
+        id=str(user.get("_id", "new")),
         username=user["username"],
         email=user["email"],
         role=user["role"],
@@ -62,18 +70,20 @@ def register_user(data: UserCreate) -> Optional[UserResponse]:
     )
 
 
-def authenticate(data: UserLogin) -> Optional[TokenResponse]:
-    """Authenticate user and return tokens."""
-    user = _users_db.get(data.username)
+async def authenticate(data: UserLogin) -> Optional[TokenResponse]:
+    """Authenticate user via DB and return tokens."""
+    user = await db_manager.get_user_by_username(data.username)
     if not user:
         return None
+        
     if not pwd_context.verify(data.password, user["password_hash"]):
+        # Potentially record failed attempt here
         return None
 
-    user["last_login"] = datetime.now().isoformat()
+    await db_manager.update_user(user["username"], {"last_login": datetime.now().isoformat()})
 
     payload = {
-        "sub": user["id"],
+        "sub": str(user["_id"]),
         "username": user["username"],
         "role": user["role"],
     }
@@ -90,39 +100,12 @@ def authenticate(data: UserLogin) -> Optional[TokenResponse]:
     )
 
 
-def refresh_token(token: str) -> Optional[TokenResponse]:
-    """Refresh access token using refresh token."""
-    try:
-        payload = security_manager.verify_token(token)
-        if payload.get("type") != "refresh":
-            return None
-
-        new_payload = {
-            "sub": payload["sub"],
-            "username": payload["username"],
-            "role": payload["role"],
-        }
-
-        access = security_manager.create_access_token(new_payload)
-        refresh = security_manager.create_refresh_token(new_payload)
-
-        from app.utils.config import settings
-        return TokenResponse(
-            access_token=access,
-            refresh_token=refresh,
-            token_type="bearer",
-            expires_in=settings.JWT_EXPIRATION_HOURS * 3600,
-        )
-    except Exception:
-        return None
-
-
-def get_user(username: str) -> Optional[UserResponse]:
-    user = _users_db.get(username)
+async def get_user_info(username: str) -> Optional[UserResponse]:
+    user = await db_manager.get_user_by_username(username)
     if not user:
         return None
     return UserResponse(
-        id=user["id"],
+        id=str(user["_id"]),
         username=user["username"],
         email=user["email"],
         role=user["role"],

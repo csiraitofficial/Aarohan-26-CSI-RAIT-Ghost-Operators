@@ -34,9 +34,10 @@ Connection = namedtuple("Connection", ["src_ip", "dst_ip", "dst_port", "timestam
 class ConnectionTracker:
     """Stateful tracker for network connections within a sliding window."""
 
-    def __init__(self, window_seconds: int = 300):
+    def __init__(self, window_seconds: int = 300, max_track_size: int = 10000):
         self.window = window_seconds
-        self._connections: Deque[Connection] = deque()
+        self.max_track_size = max_track_size
+        self._connections: Deque[Connection] = deque(maxlen=max_track_size)
         self._syn_counts: Dict[str, int] = defaultdict(int)
         self._port_access: Dict[str, Set[int]] = defaultdict(set)
         self._src_packet_counts: Dict[str, int] = defaultdict(int)
@@ -45,8 +46,13 @@ class ConnectionTracker:
         self._last_cleanup = time.time()
 
     def update(self, packet: PacketInfo):
-        """Track a new packet."""
+        """Track a new packet with resource limits."""
         now = datetime.now()
+        
+        # Resource exhaustion prevention
+        if len(self._syn_counts) > 5000: # Limit tracked source IPs
+            self._cleanup_all()
+
         conn = Connection(
             src_ip=packet.source_ip,
             dst_ip=packet.dest_ip,
@@ -59,7 +65,9 @@ class ConnectionTracker:
         self._protocol_counts[packet.source_ip][packet.protocol] += 1
 
         if packet.dest_port:
-            self._port_access[packet.source_ip].add(packet.dest_port)
+            port_set = self._port_access[packet.source_ip]
+            if len(port_set) < 1000: # Limit ports per IP
+                port_set.add(packet.dest_port)
 
         if packet.tcp_flags and "SYN" in packet.tcp_flags:
             self._syn_counts[packet.source_ip] += 1
@@ -323,11 +331,23 @@ class SignatureEngine:
              AttackCategory.INITIAL_ACCESS,
              MITREMapping(tactic="Initial Access", technique_id="T1021", technique_name="Remote Services")),
 
-            # FTP
-            ("FTP_001", "FTP Data Transfer", "port_range:20-21", AlertSeverity.LOW,
-             "FTP connection detected — unencrypted file transfer",
-             AttackCategory.COLLECTION,
-             MITREMapping(tactic="Collection", technique_id="T1005", technique_name="Data from Local System")),
+            # Elite: DNS Tunneling (Sophisticated)
+            ("DNS_TUNNEL_ELITE", "Advanced DNS Tunneling", "regex:(?i)[a-z0-9]{20,}\\.com", AlertSeverity.HIGH,
+             "Detected long, high-entropy DNS query — likely C2 tunneling",
+             AttackCategory.COMMAND_AND_CONTROL,
+             MITREMapping(tactic="Command and Control", technique_id="T1071.004", technique_name="DNS")),
+
+            # Elite: SMB Enumeration
+            ("SMB_ENUM_ELITE", "SMB Session Enumeration", "port_range:445-445", AlertSeverity.HIGH,
+             "Detected suspicious SMB session enumeration / lateral movement",
+             AttackCategory.LATERAL_MOVEMENT,
+             MITREMapping(tactic="Lateral Movement", technique_id="T1021.002", technique_name="SMB/Windows Admin Shares")),
+
+            # Elite: RDP Tunneling (SSH/VPN)
+            ("RDP_TUNNEL_ELITE", "RDP Over Non-Standard Port", "regex:.*RDP.*", AlertSeverity.HIGH,
+             "Detected RDP protocol signature on non-standard port",
+             AttackCategory.COMMAND_AND_CONTROL,
+             MITREMapping(tactic="Command and Control", technique_id="T1571", technique_name="Non-Standard Port")),
         ]
 
         for spec in rules_spec:

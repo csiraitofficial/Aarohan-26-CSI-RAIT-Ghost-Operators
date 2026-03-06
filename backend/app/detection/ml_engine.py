@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 import joblib
 
-from app.detection.dl_models import CNN1DDetector, LSTMDetector, AutoencoderAnomaly
+from app.detection.dl_models import CNN1DDetector, LSTMDetector, AutoencoderAnomaly, EliteHybridDetector
 from app.models.schemas import (
     PacketInfo, NetworkFlow, MLModelConfig,
     DetectionType, AlertSeverity, AttackCategory,
@@ -109,7 +109,7 @@ class MLEngine:
     # ----------------------------------------------------------------
 
     def _init_dl_models(self):
-        """Initialize Deep Learning models."""
+        """Initialize Elite Deep Learning models."""
         if not TORCH_AVAILABLE:
             return
         
@@ -117,7 +117,20 @@ class MLEngine:
         self.cnn_model = CNN1DDetector(input_dim)
         self.lstm_model = LSTMDetector(input_dim)
         self.autoencoder = AutoencoderAnomaly(input_dim)
-        logger.info("Deep Learning models initialized (CNN, LSTM, AE)")
+        # Elite Hybrid
+        self.elite_hybrid = EliteHybridDetector(input_dim=input_dim)
+        
+        # Load weights if exist
+        hybrid_path = os.path.join(os.path.dirname(self.config.model_path), "nids_hybrid_elite.pth")
+        if os.path.exists(hybrid_path):
+            try:
+                self.elite_hybrid.load_state_dict(torch.load(hybrid_path, map_location=torch.device('cpu')))
+                self.elite_hybrid.eval()
+                logger.info("Loaded Elite Hybrid DL weights")
+            except Exception as e:
+                logger.warning(f"Failed to load Hybrid weights: {e}")
+
+        logger.info("Deep Learning models initialized (CNN, LSTM, AE, EliteHybrid)")
 
     def _init_model(self):
         """Initialize or load the ML model."""
@@ -263,20 +276,34 @@ class MLEngine:
         try:
             X = np.array([features])
             X_scaled = self.scaler.transform(X)
-
+            
+            # 1. Classical ML Prediction
             if isinstance(self.model, IsolationForest):
                 prediction = self.model.predict(X_scaled)[0]
-                is_anomalous = prediction == -1
+                is_anomalous_ml = prediction == -1
                 score = self.model.score_samples(X_scaled)[0]
-                confidence = max(0.0, min(1.0, -score))
+                conf_ml = max(0.0, min(1.0, -score))
             else:
                 prediction = self.model.predict(X_scaled)[0]
-                is_anomalous = prediction == 1
-                if hasattr(self.model, "predict_proba"):
-                    proba = self.model.predict_proba(X_scaled)[0]
-                    confidence = float(max(proba))
-                else:
-                    confidence = 0.7 if is_anomalous else 0.3
+                is_anomalous_ml = prediction == 1
+                proba = self.model.predict_proba(X_scaled)[0] if hasattr(self.model, "predict_proba") else [0.5, 0.5]
+                conf_ml = float(max(proba))
+
+            # 2. Elite DL Prediction (Hybrid)
+            is_anomalous_dl = False
+            conf_dl = 0.0
+            if TORCH_AVAILABLE:
+                with torch.no_grad():
+                    X_torch = torch.FloatTensor(X_scaled)
+                    dl_out = self.elite_hybrid(X_torch)
+                    dl_probs = torch.softmax(dl_out, dim=1)[0]
+                    is_anomalous_dl = torch.argmax(dl_out).item() == 1
+                    conf_dl = dl_probs[1].item() if is_anomalous_dl else dl_probs[0].item()
+
+            # Ensemble Voting (Weighted)
+            # 60% DL weight, 40% ML weight for elite performance
+            is_anomalous = (0.6 * float(is_anomalous_dl) + 0.4 * float(is_anomalous_ml)) > 0.5
+            confidence = (0.6 * conf_dl + 0.4 * conf_ml)
 
             elapsed = time.time() - start
             self._inference_times.append(elapsed)
@@ -284,22 +311,20 @@ class MLEngine:
             if is_anomalous:
                 self.anomalies_detected += 1
 
-            # Determine severity from confidence
             severity = self._confidence_to_severity(confidence)
-            attack_cat = AttackCategory.UNKNOWN
-
+            
             return {
                 "is_anomalous": is_anomalous,
                 "confidence": round(confidence, 4),
                 "severity": severity,
-                "attack_category": attack_cat,
-                "description": f"ML anomaly detected (confidence: {confidence:.2%})" if is_anomalous else "Normal traffic",
+                "attack_category": AttackCategory.UNKNOWN,
+                "description": f"Ensemble Elite Detection (DL: {conf_dl:.1%}, ML: {conf_ml:.1%})" if is_anomalous else "Normal traffic",
                 "detection_type": DetectionType.ML,
                 "inference_time_ms": round(elapsed * 1000, 2),
             }
 
         except Exception as e:
-            logger.error(f"ML prediction error: {e}")
+            logger.error(f"Elite Ensemble prediction error: {e}")
             return self._no_op_result()
 
     def predict_flow(self, flow: NetworkFlow) -> Dict[str, Any]:

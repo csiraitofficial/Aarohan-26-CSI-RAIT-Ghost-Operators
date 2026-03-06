@@ -72,14 +72,15 @@ class SecurityManager:
     def record_failed_attempt(self, ip: str):
         self.failed_attempts[ip] = self.failed_attempts.get(ip, 0) + 1
         if self.failed_attempts[ip] >= 5:
-            self.blocked_ips.add(ip)
-            logger.warning(f"IP {ip} blocked after repeated auth failures")
+            # Persistent Block
+            import asyncio
+            from app.db.database import db_manager
+            asyncio.create_task(db_manager.add_blocked_ip(ip, "Brute force detected"))
+            logger.warning(f"IP {ip} blocked persistently after repeated auth failures")
 
-    def reset_failed_attempts(self, ip: str):
-        self.failed_attempts.pop(ip, None)
-
-    def is_ip_blocked(self, ip: str) -> bool:
-        return ip in self.blocked_ips
+    async def is_ip_blocked(self, ip: str) -> bool:
+        from app.db.database import db_manager
+        return await db_manager.is_ip_blocked(ip)
 
     def log_event(self, event_type: str, details: Dict[str, Any], client_ip: str = None):
         sanitized = {

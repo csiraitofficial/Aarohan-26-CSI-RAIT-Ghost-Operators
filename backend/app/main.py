@@ -11,9 +11,13 @@ Integrates:
 
 import logging
 import asyncio
+import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from app.api.routes import router as api_router
 from app.api.auth import router as auth_router
@@ -21,18 +25,16 @@ from app.core.orchestrator import NIDSOrchestrator
 from app.core.ws_manager import ws_manager
 from app.db.database import db_manager
 from app.utils.config import settings
+from app.utils.logging_config import setup_production_logging
 from app.utils.security import SecurityMiddleware
 from app.models.schemas import SnifferConfig, MLModelConfig, IPSConfig
 
-logging.basicConfig(
-    level=settings.LOG_LEVEL,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(settings.LOG_FILE),
-        logging.StreamHandler()
-    ]
-)
+# Initialize Production Logging
+setup_production_logging()
 logger = logging.getLogger("nids")
+
+# Initialize Rate Limiter
+limiter = Limiter(key_func=get_remote_address)
     
 orchestrator = None
 
@@ -54,7 +56,12 @@ async def lifespan(app: FastAPI):
             ips_cfg,
             ws_broadcast=ws_manager.broadcast_sync
         )
-        logger.info("NIDS Orchestrator initialized")
+        # Verify and initialize DB state
+        from app.api.auth import ADMIN_PASSWORD
+        if ADMIN_PASSWORD == "Generate-Secure-P@ssw0rd-123!":
+             logger.warning("🛡️ SECURITY ALERT: NIDS is running with hardcoded ADMIN_PASSWORD. Change NIDS_ADMIN_PASSWORD in .env immediately!")
+
+        logger.info("NIDS Orchestrator initialized with Industrial-Grade hardening")
     except Exception as e:
         logger.error(f"Failed to initialize orchestrator: {e}")
 
@@ -69,18 +76,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Ghost Operators NIDS",
-    description="Advanced Network Intrusion Detection & Prevention System",
+    description="Production-grade Network Intrusion Detection & Prevention System",
     version="2.0.0",
     lifespan=lifespan
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Handled by SecurityMiddleware below
 
 app.add_middleware(SecurityMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=settings.cors_origins_list if settings.CORS_ORIGINS != "*" else ["http://localhost:3000"], 
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(auth_router, tags=["Authentication"])

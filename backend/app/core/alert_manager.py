@@ -20,6 +20,8 @@ import logging
 from app.models.schemas import (
     Alert, PacketInfo, AlertSeverity, DetectionType, AttackCategory,
 )
+from app.db.database import db_manager
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -97,16 +99,24 @@ class AlertManager:
                 mitre_mapping=detection_info.get("mitre"),
             )
 
-            # Suppression
-            if self._should_suppress(alert):
-                self.suppressed_count += 1
-                return None
-
-            # Store
+            # Store & Stats (Thread-safe)
             with self._lock:
+                # Suppression
+                if self._should_suppress(alert):
+                    self.suppressed_count += 1
+                    return None
+
                 self.alerts.append(alert)
-            self.alerts_by_severity[severity] = self.alerts_by_severity.get(severity, 0) + 1
-            self.alerts_by_type[detection_type.value] = self.alerts_by_type.get(detection_type.value, 0) + 1
+                self.alerts_by_severity[severity] = self.alerts_by_severity.get(severity, 0) + 1
+                self.alerts_by_type[detection_type.value] = self.alerts_by_type.get(detection_type.value, 0) + 1
+
+            # Persist to Database (Async)
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(db_manager.insert_alert(alert.model_dump()))
+            except Exception as e:
+                logger.error(f"Failed to persist alert to DB: {e}")
 
             # Correlate
             self._correlate(alert)

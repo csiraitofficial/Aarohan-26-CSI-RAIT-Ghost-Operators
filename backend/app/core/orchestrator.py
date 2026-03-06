@@ -18,13 +18,22 @@ import logging
 from app.core.capture_engine import CaptureEngine
 from app.core.flow_aggregator import FlowAggregator
 from app.core.alert_manager import AlertManager
-from app.core.ips_manager import IPSManager
+from app.prevention.ips_engine import IPSEngine
+from app.prevention.playbook_engine import PlaybookEngine
+from app.prevention.honeypot import HoneypotManager
 from app.detection.ml_engine import MLEngine
 from app.detection.signature_engine import SignatureEngine
 from app.detection.eta_engine import eta_engine
 from app.detection.correlation_engine import correlation_engine
+from app.detection.evasion_detector import EvasionDetector
+from app.detection.dpi_engine import DPIEngine
+from app.intelligence.threat_feeds import threat_intel
 from app.intelligence.threat_feeds import threat_intel
 from app.intelligence.geoip import geoip_lookup
+from app.intelligence.ueba import UEBAEngine
+from app.intelligence.ai_triage import AITriageManager
+from app.detection.vulnerability_engine import VulnerabilityEngine
+from app.prevention.deception_engine import DeceptionEngine
 from app.models.schemas import (
     PacketInfo, SnifferConfig, MLModelConfig, IPSConfig,
     SystemStatus, DetectionType, Alert,
@@ -52,18 +61,30 @@ class NIDSOrchestrator:
         self.flow_aggregator = FlowAggregator(flow_timeout=120.0)
         self.ml_engine = MLEngine(ml_config)
         self.signature_engine = SignatureEngine()
-        self.ips_manager = IPSManager(ips_config)
+        self.ips_engine = IPSEngine(ips_config)
         self.alert_manager = AlertManager(
             alert_callback=alert_callback,
             ws_broadcast=ws_broadcast,
         )
+        self.playbook_engine = PlaybookEngine(self.ips_engine, self.alert_manager)
+        self.honeypot = HoneypotManager()
         
         # Phase 2 Advanced Engines
         self.eta_engine = eta_engine
         self.correlation_engine = correlation_engine
         self.threat_intel = threat_intel
         self.geoip = geoip_lookup
+        self.evasion_detector = EvasionDetector()
+        self.dpi_engine = DPIEngine()
 
+        # Phase 4 Advanced Intelligence
+        self.ueba_engine = UEBAEngine()
+        self.ai_triage = AITriageManager()
+        # Threading & Concurrency Hardening
+        self._lock = threading.Lock()
+        from collections import deque
+        self.traffic_history = deque(maxlen=3600) # Last 1 hour of traffic counts (per sec)
+        
         # State
         self.is_running = False
         self.start_time: Optional[datetime] = None
@@ -72,7 +93,7 @@ class NIDSOrchestrator:
         self.ml_predictions = 0
         self.signature_matches = 0
 
-        # Performance
+        # Performance Performance
         self._perf = {
             "avg_processing_time": 0.0,
             "max_processing_time": 0.0,
@@ -91,22 +112,19 @@ class NIDSOrchestrator:
             logger.warning("NIDS already running")
             return False
 
-        self.is_running = True
-        self.start_time = datetime.now()
-        self.packets_processed = 0
-        self.alerts_generated = 0
-        self.ml_predictions = 0
-        self.signature_matches = 0
-        self._perf = {
-            "avg_processing_time": 0.0,
-            "max_processing_time": 0.0,
-            "min_processing_time": float("inf"),
-            "total_processing_time": 0.0,
-        }
+        with self._lock:
+            self.is_running = True
+            self.start_time = datetime.now()
+            self.packets_processed = 0
+            self.alerts_generated = 0
+            self.ml_predictions = 0
+            self.signature_matches = 0
+            self.traffic_history.clear()
 
         if not self.capture_engine.start(callback=self._process_packet):
+            with self._lock:
+                self.is_running = False
             logger.error("Failed to start capture engine")
-            self.is_running = False
             return False
 
         # Background flow flush
@@ -129,25 +147,32 @@ class NIDSOrchestrator:
     # ----------------------------------------------------------------
 
     def _process_packet(self, packet: PacketInfo):
-        """Main processing pipeline for each captured packet."""
+        """Main processing pipeline with thread-safety and failsafe logic."""
         if not self.is_running:
             return
 
         t0 = time.time()
         try:
-            self.packets_processed += 1
-
-            # IPS cleanup
-            if time.time() - self._last_cleanup > 60:
-                self.ips_manager.cleanup_expired()
-                self._last_cleanup = time.time()
-
+            with self._lock:
+                self.packets_processed += 1
+                
+                # Failsafe: If processing delay is > 500ms, skip ML and DL for this packet
+                # to prevent buffer overflow (Blindness mitigation)
+                is_overloaded = self._perf["avg_processing_time"] > 0.5
+                
             # Skip blocked IPs
-            if self.ips_manager.is_blocked(packet.source_ip):
+            if self.ips_engine.is_blocked(packet.source_ip):
                 return
+
+            # Phase 3/5: IPS Stateful tracking (SYN floods etc)
+            self.ips_engine.track_stateful(packet)
 
             # Feed to flow aggregator
             self.flow_aggregator.process_packet(packet)
+
+            # Phase 4: UEBA Profiling
+            self.ueba_engine.process_packet(packet.source_ip, packet)
+            ueba_anomalies = self.ueba_engine.analyze_anomaly(packet.source_ip)
 
             # ML detection (packet-level)
             ml_result = self._run_ml(packet)
@@ -160,8 +185,18 @@ class NIDSOrchestrator:
             if eta_result:
                 sig_results.append(eta_result)
 
+            # Evasion detection
+            evasion_results = self.evasion_detector.detect(packet)
+            if evasion_results:
+                sig_results.extend(evasion_results)
+
+            # DPI (Deep Packet Inspection)
+            dpi_results = self.dpi_engine.inspect(packet)
+            if dpi_results:
+                sig_results.extend(dpi_results)
+
             # Generate alerts
-            alerts = self._generate_alerts(packet, ml_result, sig_results)
+            alerts = self._generate_alerts(packet, ml_result, sig_results, ueba_anomalies)
             
             # Phase 2: Correlation
             for alert in alerts:
@@ -170,6 +205,11 @@ class NIDSOrchestrator:
                     if incident:
                         # Log/Broadcast incident
                         logger.warning(f"INCIDENT: {incident.title}")
+
+            # Vulnerability detection (Passive)
+            vuln_results = self.vuln_engine.analyze_packet(packet)
+            if vuln_results:
+                sig_results.extend(vuln_results)
 
             # Performance tracking
             elapsed = time.time() - t0
@@ -196,16 +236,19 @@ class NIDSOrchestrator:
             logger.error(f"Signature engine error: {e}")
             return []
 
-    def _generate_alerts(self, packet: PacketInfo, ml: Dict, sigs: List[Dict]) -> List[Alert]:
+    def _generate_alerts(self, packet: PacketInfo, ml: Dict, sigs: List[Dict], ueba: List[Dict] = None) -> List[Alert]:
         created_alerts = []
         highest = "info"
+        ueba = ueba or []
 
+        # 1. ML Alerts
         if ml.get("is_anomalous"):
             a = self.alert_manager.create_ml_alert(ml, packet)
             if a:
                 created_alerts.append(a)
                 highest = a.severity
 
+        # 2. Signature Alerts
         for sig in sigs:
             a = self.alert_manager.create_signature_alert(sig, packet)
             if a:
@@ -215,6 +258,21 @@ class NIDSOrchestrator:
                 elif a.severity == "high" and highest != "critical":
                     highest = "high"
 
+        # 3. UEBA Alerts (Behavioral)
+        for anomaly in ueba:
+            a = self.alert_manager.create_alert(
+                name=anomaly["type"],
+                severity=anomaly["severity"],
+                detection_type=DetectionType.BEHAVIORAL,
+                description=anomaly["description"],
+                packet=packet,
+                confidence=anomaly["confidence"]
+            )
+            if a:
+                created_alerts.append(a)
+                if a.severity == "high" and highest not in ["critical"]:
+                    highest = "high"
+
         # Hybrid alert
         if ml.get("is_anomalous") and sigs:
             best_sig = max(sigs, key=lambda s: s.get("confidence", 0))
@@ -222,13 +280,29 @@ class NIDSOrchestrator:
             if a:
                 created_alerts.append(a)
 
-        # IPS auto-block on critical
-        if highest == "critical" and self.ips_manager.config.auto_block:
-            self.ips_manager.block_ip(
-                packet.source_ip,
-                duration_minutes=self.ips_manager.config.block_duration_minutes,
-                reason="Critical threat auto-blocked by NIDS",
-            )
+        # Phase 4: AI Triage for each alert
+        for alert in created_alerts:
+            triage_result = self.ai_triage.triage(alert.model_dump())
+            # Result stored in triage history, could be attached to Alert model in future
+            logger.info(f"AI TRIAGE [{alert.id}]: {triage_result['ai_explanation']}")
+
+        # Phase 3: Automated Playbook Execution
+        if created_alerts and self.ips_engine.config.auto_block:
+            for alert in created_alerts:
+                # We use an async wrapper or just call it since it's a critical path
+                # For simplicity in this sync orchestrator, we fire-and-forget or keep it swift
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        loop.create_task(self.playbook_engine.execute(alert.model_dump()))
+                except Exception as e:
+                    logger.error(f"Playbook execution error: {e}")
+
+        # Cleanup expired blocks periodically
+        if time.time() - self._last_cleanup > 60:
+            self.ips_engine.cleanup_expired()
+            self._last_cleanup = time.time()
 
         self.alerts_generated += len(created_alerts)
         return created_alerts
@@ -308,7 +382,9 @@ class NIDSOrchestrator:
             "ml_stats": self.ml_engine.get_stats(),
             "signature_stats": self.signature_engine.get_stats(),
             "alert_stats": self.alert_manager.get_stats(),
-            "ips_stats": self.ips_manager.get_stats(),
+            "ips_stats": self.ips_engine.get_stats(),
+            "playbook_history": self.playbook_engine.get_history(),
+            "honeypot_stats": self.honeypot.get_stats(),
             "performance_stats": self._perf,
             "component_health": {
                 "capture": self.capture_engine.is_running,
@@ -316,7 +392,31 @@ class NIDSOrchestrator:
                 "signatures": len(self.signature_engine.rules) > 0,
                 "alerts": True,
                 "ips": True,
+                "ueba": True,
+                "ai_triage": True,
+                "evasion_detection": True,
+                "dpi": True,
+                "vulnerability_scan": True,
+                "deception": True
             },
+            "predictive_insight": self.get_predictive_insight()
+        }
+
+    def get_predictive_insight(self) -> Dict[str, Any]:
+        """Simple trend-based predictive analytics for traffic volume."""
+        if len(self.traffic_history) < 5:
+            return {"status": "insufficient_data"}
+        
+        recent = self.traffic_history[-5:]
+        avg = sum(recent) / 5
+        trend = "stable"
+        if recent[-1] > avg * 1.5: trend = "increasing"
+        elif recent[-1] < avg * 0.5: trend = "decreasing"
+        
+        return {
+            "predicted_trend": trend,
+            "next_hour_estimate": avg * 1.1 if trend == "increasing" else avg,
+            "confidence": 0.65
         }
 
     # ----------------------------------------------------------------

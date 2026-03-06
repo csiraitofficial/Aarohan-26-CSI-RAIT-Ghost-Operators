@@ -147,13 +147,33 @@ async def get_stats(orch=Depends(get_orchestrator)):
 
 @router.post("/ips/block", dependencies=[Depends(require_role(UserRole.ADMIN, UserRole.ANALYST))])
 async def block_ip(req: BlockIPRequest, orch=Depends(get_orchestrator)):
-    if orch.ips_manager.block_ip(req.ip_address, req.duration_minutes, req.reason):
+    if orch.ips_engine.block_ip(req.ip_address, req.duration_minutes, req.reason):
         return {"status": "success", "message": f"IP {req.ip_address} blocked"}
     raise HTTPException(status_code=500, detail="Failed to block IP")
 
 @router.get("/ips/blocked-ips", dependencies=[Depends(require_role(UserRole.ADMIN, UserRole.ANALYST))])
 async def get_blocked_ips(orch=Depends(get_orchestrator)):
-    return orch.ips_manager.get_blocked_ips()
+    return orch.ips_engine.get_blocked_ips()
+
+@router.get("/prevention/playbook-history", dependencies=[Depends(require_role(UserRole.ADMIN, UserRole.ANALYST))])
+async def get_playbook_history(orch=Depends(get_orchestrator)):
+    return orch.playbook_engine.get_history()
+
+@router.get("/prevention/honeypot-stats", dependencies=[Depends(require_role(UserRole.ADMIN, UserRole.ANALYST))])
+async def get_honeypot_stats(orch=Depends(get_orchestrator)):
+    return orch.honeypot.get_stats()
+
+@router.get("/intelligence/ueba-stats", dependencies=[Depends(require_role(UserRole.ADMIN, UserRole.ANALYST))])
+async def get_ueba_stats(orch=Depends(get_orchestrator)):
+    return orch.ueba_engine.get_stats()
+
+@router.get("/intelligence/ai-triage-history", dependencies=[Depends(require_role(UserRole.ADMIN, UserRole.ANALYST))])
+async def get_ai_triage_history(orch=Depends(get_orchestrator)):
+    return orch.ai_triage.triage_history
+
+@router.get("/intelligence/predictive-insight", dependencies=[Depends(require_role(UserRole.ADMIN, UserRole.ANALYST))])
+async def get_predictive_insight(orch=Depends(get_orchestrator)):
+    return orch.get_predictive_insight()
 
 # ============================================================
 # Configuration
@@ -164,7 +184,7 @@ async def get_config(orch=Depends(get_orchestrator)):
     return {
         "sniffer": orch.sniffer_config,
         "ml": orch.ml_config,
-        "ips": orch.ips_manager.config
+        "ips": orch.ips_engine.config
     }
 
 @router.post("/config/sniffer", dependencies=[Depends(require_role(UserRole.ADMIN))])

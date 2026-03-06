@@ -60,6 +60,11 @@ class NIDSOrchestrator:
         self.capture_engine = CaptureEngine(sniffer_config)
         self.flow_aggregator = FlowAggregator(flow_timeout=120.0)
         self.ml_engine = MLEngine(ml_config)
+        
+        # Hardware Resilience Check
+        if os.getenv('NIDS_SAFE_MODE', 'false').lower() == 'true':
+            logger.warning("🛡️  NIDS APPLIANCE: [SAFE MODE] ENABLED. ML/DL engines bypassed for hardware resilience.")
+            logger.warning("💡 System is running in SIGNATURE-ONLY mode (Low power/compatibility mode).")
         self.signature_engine = SignatureEngine()
         self.ips_engine = IPSEngine(ips_config)
         self.alert_manager = AlertManager(

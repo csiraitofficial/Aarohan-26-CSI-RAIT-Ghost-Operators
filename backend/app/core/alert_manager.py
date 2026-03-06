@@ -103,7 +103,7 @@ class AlertManager:
 
             self.blockchain.report_alert(
                 alert.source_ip,
-                alert.attack_category
+                alert.attack_category.value if hasattr(alert.attack_category, 'value') else str(alert.attack_category)
             )
             # Store & Stats (Thread-safe)
             with self._lock:

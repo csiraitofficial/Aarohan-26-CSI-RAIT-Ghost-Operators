@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     MAX_PACKETS_BUFFER: int = 20000
     CORRELATION_WINDOW_MINUTES: int = 5
 
+    # Blockchain (Industrial Hardening)
+    BLOCKCHAIN_ENABLED: bool = True
+    BLOCKCHAIN_RPC_URL: str = "http://127.0.0.1:8545"
+    BLOCKCHAIN_CONTRACT_ADDRESS: str = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+
+    # Hardware Resilience
+    NIDS_SAFE_MODE: bool = False
+
     @property
     def mongodb_url(self) -> str:
         """Build MongoDB connection URL."""

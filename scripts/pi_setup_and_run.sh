@@ -51,12 +51,27 @@ if [ ! -f ".env" ]; then
 fi
 
 # 7. Hardware Optimization (Interface)
-INTERFACE=$(grep "INTERFACE=" .env | cut -d'=' -f2 | tr -d '"')
-if [ -z "$INTERFACE" ]; then INTERFACE="eth0"; fi
+INTERFACE=$(grep "INTERFACE=" .env | cut -d'=' -f2 | tr -d '"' | tr -d ' ' || echo "eth0")
 
-echo "🚀 Optimizing Interface: $INTERFACE..."
-ip link set $INTERFACE promisc on
-ethtool -K $INTERFACE gro off || echo "⚠️ GRO offload not supported on this interface."
+echo "🚀 Attempting to optimize Interface: $INTERFACE..."
+
+# Check if the interface exists
+if ! ip link show "$INTERFACE" > /dev/null 2>&1; then
+    echo "⚠️  Interface '$INTERFACE' not found. Searching for Linux defaults..."
+    if ip link show wlan0 > /dev/null 2>&1; then
+        INTERFACE="wlan0"
+    elif ip link show eth0 > /dev/null 2>&1; then
+        INTERFACE="eth0"
+    else
+        # Find first non-loopback interface
+        INTERFACE=$(ip -o link show | awk '{print $2}' | grep -v "lo" | head -n 1 | cut -d':' -f1)
+    fi
+    echo "� Auto-detected interface: $INTERFACE. Please update your .env to avoid this warning."
+fi
+
+echo "🛡️  Applying hardware tweaks to $INTERFACE..."
+ip link set "$INTERFACE" promisc on || echo "⚠️  Could not set promiscuous mode."
+ethtool -K "$INTERFACE" gro off || echo "⚠️  GRO offload not supported on this interface."
 
 # 8. Final Verification
 echo "🔍 Verifying Elite Models..."

@@ -4,6 +4,7 @@ JWT Authentication & RBAC Module
 Provides user registration, login, token refresh, and role-based access control.
 """
 
+import os
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
@@ -26,7 +27,7 @@ _users_db: Dict[str, Dict[str, Any]] = {}
 from app.utils.config import settings
 import secrets
 
-ADMIN_PASSWORD = os.getenv("NIDS_ADMIN_PASSWORD", "Generate-Secure-P@ssw0rd-123!")
+ADMIN_PASSWORD = os.getenv("NIDS_ADMIN_PASSWORD", "Ghost-Admin-Appliance-2026")
 if ADMIN_PASSWORD == "admin123":
     logger.warning("CRITICAL: USING DEFAULT ADMIN PASSWORD. CHANGE 'NIDS_ADMIN_PASSWORD' IN ENV!")
 

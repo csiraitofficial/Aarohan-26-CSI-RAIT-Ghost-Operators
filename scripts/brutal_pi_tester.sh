@@ -3,7 +3,7 @@
 # This script simulates the "Grey Hat" attacks we just patched.
 
 # IP of the Raspberry Pi NIDS
-TARGET_IP="10.177.71.32" 
+TARGET_IP="10.177.71.232" 
 
 echo "🔥 STARTING BRUTAL VERIFICATION ON PI..."
 

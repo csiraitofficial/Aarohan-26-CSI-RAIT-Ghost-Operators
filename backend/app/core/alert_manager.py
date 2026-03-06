@@ -12,6 +12,7 @@ import json
 import csv
 import io
 import threading
+import hashlib
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any, Callable
 from collections import deque
@@ -101,9 +102,14 @@ class AlertManager:
                 mitre_mapping=detection_info.get("mitre"),
             )
 
+            # Generate Integrity Hash (Production Requirement)
+            alert_data_str = f"{alert.id}|{alert.timestamp.isoformat()}|{alert.description}|{alert.source_ip}"
+            alert.integrity_hash = hashlib.sha256(alert_data_str.encode()).hexdigest()
+
             self.blockchain.report_alert(
                 alert.source_ip,
-                alert.attack_category.value if hasattr(alert.attack_category, 'value') else str(alert.attack_category)
+                alert.attack_category.value if hasattr(alert.attack_category, 'value') else str(alert.attack_category),
+                alert.integrity_hash
             )
             # Store & Stats (Thread-safe)
             with self._lock:

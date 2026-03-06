@@ -148,6 +148,7 @@ class Alert(BaseModel):
     resolved_by: Optional[str] = None
     resolved_at: Optional[datetime] = None
     resolution_notes: Optional[str] = None
+    integrity_hash: Optional[str] = None
     incident_id: Optional[str] = None
     related_alert_ids: List[str] = Field(default_factory=list)
 

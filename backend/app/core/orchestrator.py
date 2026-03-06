@@ -8,6 +8,7 @@ Upgrades over original:
   - Blockchain client is optional (pluggable)
 """
 
+import os
 import time
 import threading
 import psutil

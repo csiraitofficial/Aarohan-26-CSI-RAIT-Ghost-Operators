@@ -51,24 +51,27 @@ class BlockchainReporter:
             logger.error(f"Blockchain init failed: {e}")
             return False
 
-    def report_alert(self, ip: str, attack_category: str):
+    def report_alert(self, ip: str, attack_category: str, integrity_hash: str = ""):
         """ Public non-blocking entry point. """
         if not self.enabled:
             return
             
         # Dispatch to worker thread to prevent blocking real-time NIDS
-        blockchain_executor.submit(self._report_sync, ip, attack_category)
+        blockchain_executor.submit(self._report_sync, ip, attack_category, integrity_hash)
 
-    def _report_sync(self, ip: str, attack: str):
+    def _report_sync(self, ip: str, attack: str, integrity_hash: str):
         """ Synchronous worker function. """
         if not self._lazy_init():
             return
 
         try:
             account = self._w3.eth.accounts[0]
+            # Combine attack category and integrity hash for storage as per requirements
+            documented_data = f"{attack} | Hash: {integrity_hash}" if integrity_hash else attack
+            
             tx = self._contract.functions.storeAlert(
                 str(ip),
-                str(attack)
+                str(documented_data)
             ).transact({"from": account})
             
             tx_hash = self._w3.to_hex(tx)

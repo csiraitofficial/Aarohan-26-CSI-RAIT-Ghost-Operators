@@ -10,6 +10,7 @@ Integrates:
 """
 
 import logging
+import os
 import asyncio
 import time
 from contextlib import asynccontextmanager
@@ -62,6 +63,8 @@ async def lifespan(app: FastAPI):
              logger.warning("🛡️ SECURITY ALERT: NIDS is running with hardcoded ADMIN_PASSWORD. Change NIDS_ADMIN_PASSWORD in .env immediately!")
 
         logger.info("NIDS Orchestrator initialized with Industrial-Grade hardening")
+        orchestrator.set_loop(asyncio.get_event_loop())
+        orchestrator.start()
     except Exception as e:
         logger.error(f"Failed to initialize orchestrator: {e}")
 

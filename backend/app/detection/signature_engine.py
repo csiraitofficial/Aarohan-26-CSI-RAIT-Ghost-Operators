@@ -348,6 +348,18 @@ class SignatureEngine:
              "Detected RDP protocol signature on non-standard port",
              AttackCategory.COMMAND_AND_CONTROL,
              MITREMapping(tactic="Command and Control", technique_id="T1571", technique_name="Non-Standard Port")),
+
+            # Kali Linux Specific: Nmap Scan detection (Signature + Stateful)
+            ("NMAP_SCAN_ELITE", "Nmap Port Scan", "port_scan:20", AlertSeverity.HIGH,
+             "Detected rapid port scanning from remote host (Likely Nmap)",
+             AttackCategory.DISCOVERY,
+             MITREMapping(tactic="Discovery", technique_id="T1046", technique_name="Network Service Scanning")),
+
+            # Kali Linux Specific: SYN Flood
+            ("SYN_FLOOD_ELITE", "SYN Flood Attack", "syn_flood:50", AlertSeverity.CRITICAL,
+             "Detected massive SYN packet burst — Potential DoS attack",
+             AttackCategory.IMPACT,
+             MITREMapping(tactic="Impact", technique_id="T1498", technique_name="Network Denial of Service")),
         ]
 
         for spec in rules_spec:

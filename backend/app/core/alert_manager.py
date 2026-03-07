@@ -40,7 +40,8 @@ class AlertManager:
         self.blockchain = BlockchainReporter()
         self.max_alerts = max_alerts
         self.alert_callback = alert_callback
-        self.ws_broadcast = ws_broadcast  # called with alert dict for real-time push
+        self.ws_broadcast = ws_broadcast
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
 
         self.alerts: deque = deque(maxlen=max_alerts)
         self._alert_counter = 0
@@ -59,6 +60,9 @@ class AlertManager:
         # Correlation
         self._correlations: Dict[str, Dict[str, Any]] = {}
         self._correlation_window = timedelta(minutes=5)
+
+    def set_loop(self, loop: asyncio.AbstractEventLoop):
+        self.loop = loop
 
     # ----------------------------------------------------------------
     # Alert Creation
@@ -122,11 +126,17 @@ class AlertManager:
                 self.alerts_by_severity[severity] = self.alerts_by_severity.get(severity, 0) + 1
                 self.alerts_by_type[detection_type.value] = self.alerts_by_type.get(detection_type.value, 0) + 1
 
-            # Persist to Database (Async)
+            # Persist to Database (Thread-safe Async)
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(db_manager.insert_alert(alert.model_dump()))
+                if self.loop and self.loop.is_running():
+                    asyncio.run_coroutine_threadsafe(db_manager.insert_alert(alert.model_dump()), self.loop)
+                else:
+                    # Fallback for main thread
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            loop.create_task(db_manager.insert_alert(alert.model_dump()))
+                    except: pass
             except Exception as e:
                 logger.error(f"Failed to persist alert to DB: {e}")
 

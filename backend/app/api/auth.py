@@ -121,21 +121,21 @@ async def get_user_info(username: str) -> Optional[UserResponse]:
 
 @router.post("/register", response_model=UserResponse)
 async def api_register(data: UserCreate):
-    user = register_user(data)
+    user = await register_user(data)
     if not user:
         raise HTTPException(status_code=400, detail="Username already exists")
     return user
 
 @router.post("/login", response_model=TokenResponse)
 async def api_login(data: UserLogin):
-    tokens = authenticate(data)
+    tokens = await authenticate(data)
     if not tokens:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     return tokens
 
 @router.get("/me", response_model=UserResponse)
 async def api_me(current_user: dict = Depends(get_current_user)):
-    user = get_user(current_user["username"])
+    user = await get_user_info(current_user["username"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user

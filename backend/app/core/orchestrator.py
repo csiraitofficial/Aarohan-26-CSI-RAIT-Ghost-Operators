@@ -9,13 +9,15 @@ Upgrades over original:
 """
 
 import os
+import asyncio
+import logging
+import traceback
 import time
 import threading
 import psutil
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Callable
-import logging
-
+from typing import Dict, Any, List, Optional, Callable
+from uuid import uuid4
 from app.core.capture_engine import CaptureEngine
 from app.core.flow_aggregator import FlowAggregator
 from app.core.alert_manager import AlertManager
@@ -35,6 +37,7 @@ from app.intelligence.ueba import UEBAEngine
 from app.intelligence.ai_triage import AITriageManager
 from app.detection.vulnerability_engine import VulnerabilityEngine
 from app.prevention.deception_engine import DeceptionEngine
+from app.blockchain.reporter import BlockchainReporter
 from app.models.schemas import (
     PacketInfo, SnifferConfig, MLModelConfig, IPSConfig,
     SystemStatus, DetectionType, Alert,
@@ -86,6 +89,7 @@ class NIDSOrchestrator:
         # Phase 4 Advanced Intelligence
         self.ueba_engine = UEBAEngine()
         self.ai_triage = AITriageManager()
+        self.vuln_engine = VulnerabilityEngine()
         # Threading & Concurrency Hardening
         self._lock = threading.Lock()
         from collections import deque
@@ -98,6 +102,7 @@ class NIDSOrchestrator:
         self.alerts_generated = 0
         self.ml_predictions = 0
         self.signature_matches = 0
+        self.blockchain_reporter = BlockchainReporter()
 
         # Performance Performance
         self._perf = {
@@ -109,9 +114,9 @@ class NIDSOrchestrator:
         self._last_cleanup = time.time()
         self._flow_flush_thread: Optional[threading.Thread] = None
 
-    # ----------------------------------------------------------------
-    # Lifecycle
-    # ----------------------------------------------------------------
+    def set_loop(self, loop: asyncio.AbstractEventLoop):
+        self.alert_manager.set_loop(loop)
+        logger.info("Main event loop synchronized for thread-safe database persistence")
 
     def start(self) -> bool:
         if self.is_running:
@@ -266,13 +271,16 @@ class NIDSOrchestrator:
 
         # 3. UEBA Alerts (Behavioral)
         for anomaly in ueba:
+            detection_info = {
+                "severity": anomaly["severity"],
+                "description": anomaly["description"],
+                "confidence": anomaly["confidence"],
+                "attack_category": AttackCategory.UNKNOWN # UEBA mapping could be added
+            }
             a = self.alert_manager.create_alert(
-                name=anomaly["type"],
-                severity=anomaly["severity"],
-                detection_type=DetectionType.BEHAVIORAL,
-                description=anomaly["description"],
+                detection_info=detection_info,
                 packet=packet,
-                confidence=anomaly["confidence"]
+                detection_type=DetectionType.BEHAVIORAL
             )
             if a:
                 created_alerts.append(a)
@@ -304,6 +312,11 @@ class NIDSOrchestrator:
                         loop.create_task(self.playbook_engine.execute(alert.model_dump()))
                 except Exception as e:
                     logger.error(f"Playbook execution error: {e}")
+            
+            # Phase 6: Decentralized Consensus Proposal
+            if any(a.severity in ["high", "critical"] for a in created_alerts):
+                # Propose the source IP for global blocking
+                self.blockchain_reporter.propose_threat(packet.source_ip, created_alerts[0].name)
 
         # Cleanup expired blocks periodically
         if time.time() - self._last_cleanup > 60:

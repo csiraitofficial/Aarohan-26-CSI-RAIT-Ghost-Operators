@@ -60,8 +60,9 @@ class Settings(BaseSettings):
 
     # Blockchain (Industrial Hardening)
     BLOCKCHAIN_ENABLED: bool = True
-    BLOCKCHAIN_RPC_URL: str = "http://127.0.0.1:8545"
-    BLOCKCHAIN_CONTRACT_ADDRESS: str = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+    BLOCKCHAIN_RPC_URL: str = "https://rpc-amoy.polygon.technology"
+    BLOCKCHAIN_CONTRACT_ADDRESS: str = "0x45ad3803Af70d36d872915AeA8da6596F4bDFd76"
+    BLOCKCHAIN_CONSENSUS_ADDRESS: str = "0xD3041AB8c5A6d984ac360054130459C8AC45b20B"
     BLOCKCHAIN_PRIVATE_KEY: Optional[str] = None
 
     # Hardware Resilience

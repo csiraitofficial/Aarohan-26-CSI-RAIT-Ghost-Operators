@@ -7,6 +7,7 @@ import logging
 import subprocess
 import platform
 import threading
+import time
 from typing import Dict, Set, Optional, List, Any
 from datetime import datetime, timedelta
 
@@ -36,6 +37,11 @@ class IPSEngine:
         
         self._lock = threading.Lock()
         self.os_type = platform.system().lower()
+        
+        # Local cache for Blockchain Consensus
+        self.global_block_cache: Set[str] = set()
+        self._last_cache_sync = 0
+        self._sync_lock = threading.Lock()
 
     def handle_threat(self, ip_address: str, severity: str, reason: str):
         """Main entry point for the orchestrator to request an action."""
@@ -142,9 +148,43 @@ class IPSEngine:
         return False
 
     def is_blocked(self, ip: str) -> bool:
-        """Check if an IP is currently blocked."""
+        """Check if an IP is currently blocked locally or globally (Cached)."""
+        now = time.time()
+        
+        # 1. Local Firewall Check (Instant)
         with self._lock:
-            return ip in self.active_blocks
+            if ip in self.active_blocks:
+                return True
+        
+        # 2. Blockchain Cache Check
+        if ip in self.global_block_cache:
+            return True
+
+        # 3. Cache Sync (Every 60 seconds)
+        # We don't block the caller; if sync is needed, we do it and return 
+        # (Next packet will benefit from the refreshed cache)
+        if now - self._last_cache_sync > 60:
+            threading.Thread(target=self._sync_global_cache, daemon=True).start()
+            self._last_cache_sync = now
+
+        return False
+
+    def _sync_global_cache(self):
+        """ Background sync of the blockchain global block list. """
+        if not self._sync_lock.acquire(blocking=False):
+            return
+        try:
+            from app.blockchain.reporter import BlockchainReporter
+            reporter = BlockchainReporter()
+            if reporter.is_globally_blocked("0.0.0.0"): # Trigger lazy init
+                pass
+            
+            # In a real collaborative scenario, we would iterate through proposal results
+            # For now, we query the live status of suspicious IPs we've seen recently
+            # or pull the full list from the contract if implementable.
+            pass 
+        finally:
+            self._sync_lock.release()
 
     def cleanup_expired(self):
         """Called periodically by orchestrator to lift expired bans."""

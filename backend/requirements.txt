@@ -38,3 +38,4 @@ flake8>=6.1.0
 mypy>=1.7.0
 structlog>=23.2.0
 pyyaml>=6.0.0
+web3>=6.0.0

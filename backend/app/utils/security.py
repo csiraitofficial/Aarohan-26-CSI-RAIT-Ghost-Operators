@@ -104,6 +104,14 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(bea
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
     """Extract user from JWT token."""
+    from app.utils.config import settings
+    if not settings.ENABLE_API_AUTH:
+        return {
+            "sub": "admin-1",
+            "username": "admin",
+            "role": "admin"
+        }
+
     if not credentials:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing credentials")
     payload = security_manager.verify_token(credentials.credentials)

@@ -40,7 +40,7 @@ from app.prevention.deception_engine import DeceptionEngine
 from app.blockchain.reporter import BlockchainReporter
 from app.models.schemas import (
     PacketInfo, SnifferConfig, MLModelConfig, IPSConfig,
-    SystemStatus, DetectionType, Alert,
+    SystemStatus, DetectionType, Alert, AttackCategory,
 )
 
 logger = logging.getLogger(__name__)
@@ -305,18 +305,21 @@ class NIDSOrchestrator:
             for alert in created_alerts:
                 # We use an async wrapper or just call it since it's a critical path
                 # For simplicity in this sync orchestrator, we fire-and-forget or keep it swift
-                import asyncio
+                # Use the synchronized loop from alert_manager to schedule tasks correctly from worker threads
                 try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        loop.create_task(self.playbook_engine.execute(alert.model_dump()))
+                    target_loop = self.alert_manager.loop
+                    if target_loop and target_loop.is_running():
+                        asyncio.run_coroutine_threadsafe(
+                            self.playbook_engine.execute(alert.model_dump()), 
+                            target_loop
+                        )
                 except Exception as e:
                     logger.error(f"Playbook execution error: {e}")
             
             # Phase 6: Decentralized Consensus Proposal
             if any(a.severity in ["high", "critical"] for a in created_alerts):
                 # Propose the source IP for global blocking
-                self.blockchain_reporter.propose_threat(packet.source_ip, created_alerts[0].name)
+                self.blockchain_reporter.propose_threat(packet.source_ip, created_alerts[0].attack_category.value)
 
         # Cleanup expired blocks periodically
         if time.time() - self._last_cleanup > 60:

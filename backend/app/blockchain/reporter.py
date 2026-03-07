@@ -1,7 +1,9 @@
 import json
+from datetime import datetime
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from collections import deque
 from app.utils.config import settings
 
 logger = logging.getLogger(__name__)
@@ -19,6 +21,7 @@ class BlockchainReporter:
         self._consensus_contract = None
         self._w3 = None
         self._lock = threading.Lock()
+        self.recent_transactions = deque(maxlen=10) # Store last 10 tx hashes
         
         if not self.enabled:
             logger.info("Blockchain reporting is disabled via settings.")
@@ -122,6 +125,15 @@ class BlockchainReporter:
             tx = func_call.transact({"from": account})
         
         logger.info(f"⛓️ Blockchain: Transaction sent {self._w3.to_hex(tx)}")
+        
+        # Track for dashboard
+        with self._lock:
+            self.recent_transactions.appendleft({
+                "hash": self._w3.to_hex(tx),
+                "timestamp": datetime.now().isoformat(),
+                "type": func_call.fn_name
+            })
+            
         return tx
 
     def is_globally_blocked(self, ip: str) -> bool:

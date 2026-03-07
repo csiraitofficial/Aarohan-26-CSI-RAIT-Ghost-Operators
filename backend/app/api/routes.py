@@ -175,6 +175,19 @@ async def get_ai_triage_history(orch=Depends(get_orchestrator)):
 async def get_predictive_insight(orch=Depends(get_orchestrator)):
     return orch.get_predictive_insight()
 
+@router.get("/blockchain/status")
+async def get_blockchain_status(orch=Depends(get_orchestrator)):
+    reporter = orch.blockchain_reporter
+    return {
+        "enabled": reporter.enabled,
+        "rpc_url": reporter.rpc_url,
+        "contract_address": settings.BLOCKCHAIN_CONTRACT_ADDRESS,
+        "consensus_address": settings.BLOCKCHAIN_CONSENSUS_ADDRESS,
+        "is_connected": reporter._w3.is_connected() if reporter._w3 else False,
+        "network": "Polygon Amoy Testnet" if "amoy" in reporter.rpc_url else "Unknown",
+        "recent_transactions": list(reporter.recent_transactions)
+    }
+
 # ============================================================
 # Configuration
 # ============================================================

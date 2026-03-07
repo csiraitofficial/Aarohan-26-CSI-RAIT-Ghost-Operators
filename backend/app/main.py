@@ -88,14 +88,19 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Handled by SecurityMiddleware below
 
-app.add_middleware(SecurityMiddleware)
+# CORS Hardware-Grade Configuration
+cors_origins = settings.cors_origins_list
+allow_all = "*" in cors_origins or settings.CORS_ORIGINS == "*"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list if settings.CORS_ORIGINS != "*" else ["http://localhost:3000"], 
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_origins=["*"] if allow_all else cors_origins,
+    allow_credentials=not allow_all, 
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
+app.add_middleware(SecurityMiddleware)
 
 app.include_router(auth_router, tags=["Authentication"])
 app.include_router(api_router)

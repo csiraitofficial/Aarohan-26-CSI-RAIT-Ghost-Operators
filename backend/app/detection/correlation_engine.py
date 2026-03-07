@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Set
 from collections import defaultdict
 
-from app.models.schemas import Alert, Incident, AttackCategory
+from app.models.schemas import Alert, Incident, AttackCategory, AlertSeverity
 
 logger = logging.getLogger(__name__)
 
@@ -53,23 +53,24 @@ class CorrelationEngine:
         # Check if an incident for this source already exists
         for inc in self.active_incidents:
             if inc.source_ips and source_ip in inc.source_ips:
-                inc.alert_ids = list(set(inc.alert_ids + [a.id for a in alerts]))
-                inc.attack_categories = list(categories)
-                inc.updated_at = datetime.now()
+                inc.alert_ids = list(set(inc.alert_ids + [a.id for a in alerts if a.id]))
+                inc.last_seen = datetime.now()
                 return inc
 
         # Create new incident
+        # Mapping multiple categories to the primary one (first in the set)
+        primary_category = list(categories)[0] if categories else AttackCategory.UNKNOWN
+
         new_inc = Incident(
-            id=f"INC-{datetime.now().strftime('%Y%m%d')}-{len(self.active_incidents)+1:03d}",
+            incident_id=f"INC-{datetime.now().strftime('%Y%m%d')}-{len(self.active_incidents)+1:03d}",
             title=f"Multi-stage attack from {source_ip}",
             description=f"Correlated {len(alerts)} alerts across {len(categories)} ATT&CK categories.",
-            severity="high" if len(categories) > 2 else "medium",
-            status="open",
+            severity=AlertSeverity.HIGH if len(categories) > 2 else AlertSeverity.MEDIUM,
             source_ips=[source_ip],
-            alert_ids=[a.id for a in alerts],
-            attack_categories=list(categories),
-            created_at=datetime.now(),
-            updated_at=datetime.now()
+            alert_ids=[a.id for a in alerts if a.id],
+            attack_category=primary_category,
+            first_seen=datetime.now(),
+            last_seen=datetime.now()
         )
         self.active_incidents.append(new_inc)
         logger.warning(f"NEW INCIDENT CREATED: {new_inc.id} involving {source_ip}")
